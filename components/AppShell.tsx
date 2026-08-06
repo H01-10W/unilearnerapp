@@ -120,6 +120,37 @@ function navigateToRoute(route: string, replace = false) {
   }
 }
 
+const maxSurroundingContextWords = 8000;
+
+function boundedSurroundingText(documentText: string, selectedText: string) {
+  const words = documentText.match(/\S+/g) ?? [];
+  if (words.length <= maxSurroundingContextWords) return documentText;
+
+  const selectedWords = selectedText.match(/\S+/g) ?? [];
+  let selectionStart = -1;
+
+  if (selectedWords.length > 0 && selectedWords.length <= words.length) {
+    const selectedSource = selectedWords.join(" ");
+
+    for (let index = 0; index <= words.length - selectedWords.length; index += 1) {
+      if (words.slice(index, index + selectedWords.length).join(" ") === selectedSource) {
+        selectionStart = index;
+        break;
+      }
+    }
+  }
+
+  const windowStart =
+    selectionStart === -1
+      ? 0
+      : Math.max(0, selectionStart - Math.floor((maxSurroundingContextWords - selectedWords.length) / 2));
+  const windowEnd = Math.min(words.length, windowStart + maxSurroundingContextWords);
+  const prefix = windowStart > 0 ? "... " : "";
+  const suffix = windowEnd < words.length ? " ..." : "";
+
+  return `${prefix}${words.slice(windowStart, windowEnd).join(" ")}${suffix}`;
+}
+
 export default function AppShell() {
   const pathname = usePathname();
   const activeDocumentPath = useMemo(() => routeToDocumentPath(pathname), [pathname]);
@@ -273,9 +304,9 @@ export default function AppShell() {
     navigateToRoute(documentPathToRoute(normalizedPath));
   }
 
-  function markDocumentsChanged() {
+  const markDocumentsChanged = useCallback(() => {
     setDocumentsVersion((version) => version + 1);
-  }
+  }, []);
 
   function handleDocumentMoved(oldPath: string, newPath: string) {
     updateOpenTabs((current) => replacePath(current, oldPath, newPath));
@@ -329,7 +360,7 @@ export default function AppShell() {
     markDocumentsChanged();
   }
 
-  function handleDocumentRenamed(oldPath: string, newPath: string) {
+  const handleDocumentRenamed = useCallback((oldPath: string, newPath: string) => {
     updateOpenTabs((current) => current.map((path) => (path === oldPath ? newPath : path)));
     setEditorStates((current) => {
       const next = { ...current };
@@ -341,9 +372,9 @@ export default function AppShell() {
     });
     navigateToRoute(documentPathToRoute(newPath), true);
     markDocumentsChanged();
-  }
+  }, [markDocumentsChanged, updateOpenTabs]);
 
-  function updateEditorState(documentPath: string, state: PersistedEditorState) {
+  const updateEditorState = useCallback((documentPath: string, state: PersistedEditorState) => {
     setEditorStates((current) => ({
       ...current,
       [documentPath]: {
@@ -351,7 +382,7 @@ export default function AppShell() {
         ...state,
       },
     }));
-  }
+  }, []);
 
   function closeTab(documentPath: string) {
     updateOpenTabs((current) => {
@@ -500,6 +531,7 @@ export default function AppShell() {
     const selectedText = editorState?.selectedText?.trim() ?? "";
     const selection = editorState?.selection;
     if (!selectedText || !selection || selection.from === selection.to) return null;
+    const surroundingText = editorState?.text?.trim() ?? "";
 
     return {
       documentPath: activeDocumentPath,
@@ -507,6 +539,7 @@ export default function AppShell() {
       kind: "selection",
       label: `Selected text in ${documentTitle(activeDocumentPath)}`,
       selectedText,
+      surroundingText: boundedSurroundingText(surroundingText, selectedText),
     };
   }, [
     activeDocumentPath,
@@ -756,7 +789,7 @@ export default function AppShell() {
                 initialState={editorStates[documentPath]}
                 key={documentPath}
                 onAgentToolsChange={updateEditorAgentTools}
-                onPersistedStateChange={(state) => updateEditorState(documentPath, state)}
+                onPersistedStateChange={updateEditorState}
                 onRename={handleDocumentRenamed}
               />
             ))

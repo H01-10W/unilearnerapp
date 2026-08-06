@@ -5,6 +5,7 @@ export type AgentForegroundContext =
       label: string;
       documentPath: string;
       selectedText: string;
+      surroundingText?: string;
     }
   | {
       key: string;
@@ -37,4 +38,25 @@ export function foregroundContextDescription(context: AgentForegroundContext) {
   if (context.kind === "concept") return `Concept: ${context.concept.name}`;
   if (context.kind === "card") return `Flashcard: ${context.card.title}`;
   return `Answer: ${context.sessionCard.card.title}`;
+}
+
+export type ForegroundContextBadge = {
+  key: string;
+  label: string;
+};
+
+export function foregroundContextBadges(context: AgentForegroundContext): ForegroundContextBadge[] {
+  if (context.kind !== "selection") {
+    return [{ key: context.key, label: foregroundContextDescription(context) }];
+  }
+
+  const badges: ForegroundContextBadge[] = [
+    { key: `${context.key}:selected`, label: "Selected text" },
+  ];
+
+  if (context.surroundingText?.trim()) {
+    badges.push({ key: `${context.key}:surrounding`, label: "Surrounding text" });
+  }
+
+  return badges;
 }

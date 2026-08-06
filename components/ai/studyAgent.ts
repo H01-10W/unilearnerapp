@@ -521,7 +521,8 @@ function foregroundContextModelMessage(context: AgentForegroundContext): ModelMe
   return {
     role: "system",
     content: [
-      "Foreground study context attached for this request only. Do not assume it remains visible in later turns.",
+      "Attached study context is available for this request only. Do not assume it remains visible in later turns.",
+      "For selection context, selectedText and surroundingText may be attached independently. Use only the non-empty fields.",
       `Context kind: ${context.kind}`,
       `Document: ${context.documentPath}`,
       JSON.stringify(context, null, 2),
@@ -532,7 +533,7 @@ function foregroundContextModelMessage(context: AgentForegroundContext): ModelMe
 function noForegroundContextModelMessage(): ModelMessage {
   return {
     role: "system",
-    content: "No foreground study context is attached for this request. Do not infer a visible concept, flashcard, or answer sheet from earlier turns.",
+    content: "No study context is attached for this request. Do not infer a visible concept, flashcard, or answer sheet from earlier turns.",
   };
 }
 
@@ -1710,7 +1711,7 @@ function createStudyAgent({
       "Use read_mastery_state to inspect concepts, flashcards, weaknesses, attempts, and stage scheduling. Use read_mastery_history for completion history and read_mastery_answer_sheet for a complete saved answer/feedback session.",
       "Use edit_mastery_concept only when the user explicitly asks to change an existing mastery concept. Read the current mastery state first, preserve fields the user did not ask to change, and do not use note-editing tools for mastery concept content.",
       "Use read_revision_schedule when the user asks what is due, overdue, planned, or scheduled for future review.",
-      "Foreground study context, when present, is attached as a system message for the current request only. Treat it as what the user is currently viewing, and do not assume it remains visible in later turns unless it is attached again.",
+      "Attached study context, when present, is available for the current request only. Do not assume it remains available in later turns unless it is attached again.",
       "Only use generate_mastery_cards when the user explicitly asks to create flashcards. It routes through Learner's dedicated card-generation framework.",
       "Before modifying existing note content, read the current document unless the user only asks to insert new content.",
       "For replacing the whole active note, broad rewrites, long outlines, study guides, math-heavy content, Mermaid diagrams, or code-heavy generated content, use propose_current_document_replacement and write the replacement body in Markdown.",

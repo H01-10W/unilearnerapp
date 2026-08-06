@@ -15,7 +15,7 @@ import {
   MagnifyingGlassIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
+import { KeyboardEvent, memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   applyDocumentPatchText,
   hashDocumentPatchBase,
@@ -32,6 +32,7 @@ import { LatexDelimiters } from "./LatexDelimiters";
 
 export type PersistedEditorState = {
   contentHash?: string;
+  text?: string;
   selection?: {
     from: number;
     to: number;
@@ -120,6 +121,7 @@ type SearchDecorationState = {
 } | null;
 
 const autosaveDelayMs = 800;
+const persistedStateDelayMs = autosaveDelayMs;
 const aiPatchPreviewPluginKey = new PluginKey<AiPatchDecorationState>("aiPatchPreview");
 const aiPatchPreviewActionEvent = "learner-ai-patch-preview-action";
 const documentSearchPluginKey = new PluginKey<SearchDecorationState>("documentSearch");
@@ -868,7 +870,7 @@ const UnfocusedSelectionExtension = Extension.create({
   },
 });
 
-export default function TiptapEditor({
+function TiptapEditor({
   active,
   documentPath,
   initialState,
@@ -880,7 +882,7 @@ export default function TiptapEditor({
   documentPath: string;
   initialState?: PersistedEditorState;
   onAgentToolsChange?: (documentPath: string, tools: CurrentDocumentAgentTools | null) => void;
-  onPersistedStateChange: (state: PersistedEditorState) => void;
+  onPersistedStateChange: (documentPath: string, state: PersistedEditorState) => void;
   onRename: (oldPath: string, newPath: string) => void;
 }) {
   const [error, setError] = useState("");
@@ -894,6 +896,9 @@ export default function TiptapEditor({
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorScrollRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  const persistedStateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const documentSnapshotDirtyRef = useRef(true);
+  const documentSnapshotRef = useRef<Pick<PersistedEditorState, "contentHash" | "text"> | null>(null);
   const initialStateRef = useRef(initialState);
   const loadedRef = useRef(false);
   const activePatchPreviewRef = useRef<ActivePatchPreview | null>(null);
@@ -902,6 +907,45 @@ export default function TiptapEditor({
   const persistedStateChangeRef = useRef(onPersistedStateChange);
   const searchActiveIndexRef = useRef(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  const buildEditorState = useCallback((currentEditor: Editor): PersistedEditorState => {
+    const { from, to } = currentEditor.state.selection;
+    const snapshot = documentSnapshotRef.current;
+
+    return {
+      ...snapshot,
+      selection: { from, to },
+      selectedText: from === to ? "" : currentEditor.state.doc.textBetween(from, to, "\n\n"),
+      scrollTop: editorScrollRef.current?.scrollTop ?? 0,
+    };
+  }, []);
+
+  const refreshDocumentSnapshot = useCallback((currentEditor: Editor, publish = true) => {
+    const patchableMarkdown = getPatchableMarkdown(currentEditor);
+    documentSnapshotRef.current = {
+      contentHash: hashDocumentPatchBase(patchableMarkdown),
+      text: currentEditor.state.doc.textBetween(0, currentEditor.state.doc.content.size, "\n\n"),
+    };
+    documentSnapshotDirtyRef.current = false;
+
+    if (publish) {
+      persistedStateChangeRef.current(documentPath, buildEditorState(currentEditor));
+    }
+  }, [buildEditorState, documentPath]);
+
+  const scheduleEditorState = useCallback((currentEditor: Editor) => {
+    if (persistedStateTimerRef.current) {
+      clearTimeout(persistedStateTimerRef.current);
+    }
+
+    persistedStateTimerRef.current = setTimeout(() => {
+      persistedStateTimerRef.current = null;
+      if (documentSnapshotDirtyRef.current) {
+        refreshDocumentSnapshot(currentEditor, false);
+      }
+      persistedStateChangeRef.current(documentPath, buildEditorState(currentEditor));
+    }, persistedStateDelayMs);
+  }, [buildEditorState, documentPath, refreshDocumentSnapshot]);
 
   useEffect(() => {
     persistedStateChangeRef.current = onPersistedStateChange;
@@ -953,6 +997,7 @@ export default function TiptapEditor({
     ],
     content: emptyDocument,
     immediatelyRender: false,
+    shouldRerenderOnTransaction: false,
     editorProps: {
       attributes: {
         class: "min-h-[calc(100vh-12rem)] px-6 pb-10 outline-none",
@@ -979,26 +1024,14 @@ export default function TiptapEditor({
       },
     },
     onSelectionUpdate({ editor }) {
-      const { from, to } = editor.state.selection;
-      const patchableMarkdown = getPatchableMarkdown(editor);
-      persistedStateChangeRef.current({
-        contentHash: hashDocumentPatchBase(patchableMarkdown),
-        selection: { from, to },
-        selectedText: from === to ? "" : editor.state.doc.textBetween(from, to, "\n\n"),
-        scrollTop: editorScrollRef.current?.scrollTop ?? 0,
-      });
+      if (!loadedRef.current) return;
+      scheduleEditorState(editor);
     },
     onUpdate({ editor }) {
       if (!loadedRef.current) return;
 
-      const { from, to } = editor.state.selection;
-      const patchableMarkdown = getPatchableMarkdown(editor);
-      persistedStateChangeRef.current({
-        contentHash: hashDocumentPatchBase(patchableMarkdown),
-        selection: { from, to },
-        selectedText: from === to ? "" : editor.state.doc.textBetween(from, to, "\n\n"),
-        scrollTop: editorScrollRef.current?.scrollTop ?? 0,
-      });
+      documentSnapshotDirtyRef.current = true;
+      scheduleEditorState(editor);
 
       const searchState = documentSearchPluginKey.getState(editor.state);
       if (searchState?.query) {
@@ -1165,14 +1198,7 @@ export default function TiptapEditor({
               editorScrollRef.current.scrollTop = initialStateRef.current.scrollTop;
             }
 
-            const { from, to } = editor.state.selection;
-            const patchableMarkdown = getPatchableMarkdown(editor);
-            persistedStateChangeRef.current({
-              contentHash: hashDocumentPatchBase(patchableMarkdown),
-              selection: { from, to },
-              selectedText: from === to ? "" : editor.state.doc.textBetween(from, to, "\n\n"),
-              scrollTop: editorScrollRef.current?.scrollTop ?? 0,
-            });
+            refreshDocumentSnapshot(editor);
 
             loadedRef.current = true;
             setLoadedDocumentPath(documentPath);
@@ -1196,8 +1222,11 @@ export default function TiptapEditor({
       if (autosaveTimerRef.current) {
         clearTimeout(autosaveTimerRef.current);
       }
+      if (persistedStateTimerRef.current) {
+        clearTimeout(persistedStateTimerRef.current);
+      }
     };
-  }, [documentPath, editor]);
+  }, [documentPath, editor, refreshDocumentSnapshot]);
 
   const renameDocumentTo = useCallback(async (nextTitleInput: string) => {
     const nextTitle = nextTitleInput.trim();
@@ -1822,14 +1851,7 @@ export default function TiptapEditor({
         ref={editorScrollRef}
         onScroll={() => {
           if (!editor) return;
-          const { from, to } = editor.state.selection;
-          const patchableMarkdown = getPatchableMarkdown(editor);
-          persistedStateChangeRef.current({
-            contentHash: hashDocumentPatchBase(patchableMarkdown),
-            selection: { from, to },
-            selectedText: from === to ? "" : editor.state.doc.textBetween(from, to, "\n\n"),
-            scrollTop: editorScrollRef.current?.scrollTop ?? 0,
-          });
+          scheduleEditorState(editor);
         }}
         className="h-full overflow-auto"
       >
@@ -1858,3 +1880,13 @@ export default function TiptapEditor({
     </section>
   );
 }
+
+export default memo(TiptapEditor, (previousProps, nextProps) => {
+  return (
+    previousProps.active === nextProps.active
+    && previousProps.documentPath === nextProps.documentPath
+    && previousProps.onAgentToolsChange === nextProps.onAgentToolsChange
+    && previousProps.onPersistedStateChange === nextProps.onPersistedStateChange
+    && previousProps.onRename === nextProps.onRename
+  );
+});
