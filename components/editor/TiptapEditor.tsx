@@ -168,88 +168,6 @@ function pastedImageName(file: File, index: number) {
   return `pasted-image-${Date.now()}-${index}.${extension}`;
 }
 
-function appendInlineLatexContent(content: JSONContent[], text: string) {
-  const inlineMathRegex = /\\\(([\s\S]+?)\\\)/g;
-  let lastIndex = 0;
-
-  for (const match of text.matchAll(inlineMathRegex)) {
-    const index = match.index ?? 0;
-    const before = text.slice(lastIndex, index);
-    const latex = match[1]?.trim();
-
-    if (before) {
-      content.push({ type: "text", text: before });
-    }
-
-    if (latex) {
-      content.push({ type: "inlineMath", attrs: { latex } });
-    } else {
-      content.push({ type: "text", text: match[0] });
-    }
-
-    lastIndex = index + match[0].length;
-  }
-
-  const after = text.slice(lastIndex);
-  if (after) {
-    content.push({ type: "text", text: after });
-  }
-}
-
-function paragraphFromText(text: string): JSONContent | null {
-  const lines = text.split("\n");
-  const content: JSONContent[] = [];
-
-  lines.forEach((line, index) => {
-    if (index > 0) {
-      content.push({ type: "hardBreak" });
-    }
-
-    appendInlineLatexContent(content, line);
-  });
-
-  return content.length > 0 ? { type: "paragraph", content } : null;
-}
-
-function appendTextContent(nodes: JSONContent[], text: string) {
-  const paragraphs = text.split(/\n{2,}/);
-
-  for (const paragraph of paragraphs) {
-    const node = paragraphFromText(paragraph);
-    if (node) {
-      nodes.push(node);
-    }
-  }
-}
-
-function parseLatexDelimitedText(text: string) {
-  if (!text.includes("\\(") && !text.includes("\\[")) return null;
-
-  const nodes: JSONContent[] = [];
-  const blockMathRegex = /\\\[([\s\S]+?)\\\]/g;
-  let lastIndex = 0;
-
-  for (const match of text.matchAll(blockMathRegex)) {
-    const index = match.index ?? 0;
-    const before = text.slice(lastIndex, index);
-    const latex = match[1]?.trim();
-
-    appendTextContent(nodes, before);
-
-    if (latex) {
-      nodes.push({ type: "blockMath", attrs: { latex } });
-    } else {
-      appendTextContent(nodes, match[0]);
-    }
-
-    lastIndex = index + match[0].length;
-  }
-
-  appendTextContent(nodes, text.slice(lastIndex));
-
-  return nodes.length > 0 ? nodes : null;
-}
-
 function sanitizePreviewHtml(html: string) {
   if (typeof window === "undefined") return html;
 
@@ -1012,14 +930,16 @@ function TiptapEditor({
         }
 
         const text = event.clipboardData?.getData("text/plain") ?? "";
-        const content = parseLatexDelimitedText(text);
+        const html = event.clipboardData?.getData("text/html") ?? "";
 
-        if (!content) {
+        if (!text || html) {
           return false;
         }
 
         event.preventDefault();
-        editor?.chain().focus().insertContent(content).run();
+        editor?.chain().focus().insertContent(normalizeMarkdownForTiptap(text), {
+          contentType: "markdown",
+        }).run();
         return true;
       },
     },

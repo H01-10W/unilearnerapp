@@ -526,7 +526,7 @@ function ContextBadges({
   if (badges.length === 0) return null;
 
   return (
-    <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+    <div className="mt-2 flex flex-wrap justify-start gap-1.5">
       {badges.map((badge) => (
         <span
           className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/[0.07] px-2 py-1 text-[11px] text-white/58 ring-1 ring-white/[0.08]"
