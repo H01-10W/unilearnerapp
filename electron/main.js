@@ -223,6 +223,21 @@ function broadcastGenerationTask(task) {
 
 const aiOperationLock = createKeyedOperationLock(broadcastAiOperationStatus);
 const learnerGenerationManager = createLearnerGenerationManager({ onTaskChange: broadcastGenerationTask });
+const activeAiFetches = new Map();
+
+function assertAllowedAiRequestUrl(requestUrl, settings) {
+  const configuredSettings = configureAiSettings(settings);
+  const targetUrl = new URL(requestUrl);
+  const baseUrl = new URL(configuredSettings.baseUrl);
+  const basePath = baseUrl.pathname.replace(/\/+$/g, "");
+  const targetPathAllowed = targetUrl.pathname === basePath || targetUrl.pathname.startsWith(`${basePath}/`);
+
+  if (!["http:", "https:"].includes(targetUrl.protocol) || targetUrl.origin !== baseUrl.origin || !targetPathAllowed) {
+    throw new Error(`AI request URL is outside the configured base URL: ${targetUrl.origin}${targetUrl.pathname}`);
+  }
+
+  return targetUrl.toString();
+}
 
 async function runExclusiveAiOperation(key, label, operation) {
   try {
@@ -517,6 +532,58 @@ ipcMain.handle("document:semanticSearch", async (_event, query, limit, settings,
 
 ipcMain.handle("ai:configure", async (_event, settings) => {
   return configureAiSettings(settings);
+});
+
+ipcMain.handle("ai:fetch", async (_event, request) => {
+  const requestId = String(request?.requestId || "").trim();
+  if (!requestId) throw new Error("AI fetch request ID is required.");
+
+  const requestUrl = assertAllowedAiRequestUrl(request?.url, request?.settings);
+  const abortController = new AbortController();
+  activeAiFetches.set(requestId, abortController);
+
+  operationLog("ai.chat.transport.main_request_started", {
+    baseUrl: request.settings?.baseUrl || null,
+    method: request.method || "GET",
+    requestId,
+    url: requestUrl,
+  });
+
+  try {
+    const response = await net.fetch(requestUrl, {
+      body: request.body?.byteLength ? request.body : undefined,
+      headers: request.headers,
+      method: request.method || "GET",
+      signal: abortController.signal,
+    });
+    const body = await response.arrayBuffer();
+
+    operationLog("ai.chat.transport.main_request_completed", {
+      requestId,
+      status: response.status,
+      url: requestUrl,
+    });
+
+    return {
+      body,
+      headers: Array.from(response.headers.entries()),
+      status: response.status,
+      statusText: response.statusText,
+    };
+  } catch (error) {
+    operationLog("ai.chat.transport.main_request_failed", {
+      error: error instanceof Error ? error.message : String(error),
+      requestId,
+      url: requestUrl,
+    });
+    throw error;
+  } finally {
+    activeAiFetches.delete(requestId);
+  }
+});
+
+ipcMain.on("ai:fetchAbort", (_event, requestId) => {
+  activeAiFetches.get(String(requestId || ""))?.abort();
 });
 
 ipcMain.on("ai:chatLog", (_event, eventName, details) => {

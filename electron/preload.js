@@ -63,6 +63,12 @@ contextBridge.exposeInMainWorld("learner", {
   configureAi: (settings) => {
     return ipcRenderer.invoke("ai:configure", settings);
   },
+  fetchAi: (request) => {
+    return ipcRenderer.invoke("ai:fetch", request);
+  },
+  abortAiFetch: (requestId) => {
+    ipcRenderer.send("ai:fetchAbort", requestId);
+  },
   logAiChatEvent: (eventName, details) => {
     ipcRenderer.send("ai:chatLog", eventName, details);
   },

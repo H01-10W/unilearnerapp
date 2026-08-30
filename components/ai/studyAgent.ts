@@ -136,7 +136,51 @@ function normalizeToolCallSseLine(line: string) {
 
 function createProxyCompatibleFetch(requestId?: string): typeof fetch {
   return async (input, init) => {
-    const response = await fetch(input, init);
+    try {
+      logChatEvent("transport.request_start", {
+        requestId,
+        url: String(input),
+        method: init?.method || "GET",
+        headersPresent: Boolean(init?.headers),
+        settings: readAiSettings(),
+      });
+      console.debug("[studyAgent] transport.request_start", { requestId, url: String(input), method: init?.method });
+    } catch {
+      // ignore logging errors
+    }
+    if (!window.learner?.fetchAi) {
+      throw new Error("AI transport is not available in this environment.");
+    }
+
+    const transportRequestId = `${requestId || "chat"}_${crypto.randomUUID()}`;
+    const requestHeaders = Array.from(new Headers(input instanceof Request ? input.headers : init?.headers).entries());
+    const bodySource = init?.body ?? (input instanceof Request ? input.body : null);
+    const requestBody = bodySource == null
+      ? undefined
+      : new Uint8Array(await new Response(bodySource).arrayBuffer());
+    const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+    const abortRequest = () => window.learner?.abortAiFetch?.(transportRequestId);
+    signal?.addEventListener("abort", abortRequest, { once: true });
+
+    let transportResponse: LearnerAiFetchResponse;
+    try {
+      transportResponse = await window.learner.fetchAi({
+        body: requestBody,
+        headers: requestHeaders,
+        method: init?.method ?? (input instanceof Request ? input.method : "GET"),
+        requestId: transportRequestId,
+        settings: readAiSettings(),
+        url: input instanceof Request ? input.url : String(input),
+      });
+    } finally {
+      signal?.removeEventListener("abort", abortRequest);
+    }
+
+    const response = new Response(transportResponse.body, {
+      headers: transportResponse.headers,
+      status: transportResponse.status,
+      statusText: transportResponse.statusText,
+    });
     if (!response.body || !response.headers.get("content-type")?.includes("text/event-stream")) {
       return response;
     }
@@ -199,6 +243,18 @@ function createProxyCompatibleFetch(requestId?: string): typeof fetch {
 
 function createLearnerModel(requestId?: string) {
   const settings = readAiSettings();
+
+  try {
+    logChatEvent("model.created", {
+      requestId,
+      baseUrl: settings.baseUrl,
+      chatModel: settings.chatModel,
+      apiKeyPresent: Boolean(settings.apiKey),
+    });
+    console.debug("[studyAgent] model.created", { requestId, baseUrl: settings.baseUrl, chatModel: settings.chatModel });
+  } catch {
+    // ignore logging errors
+  }
 
   return new ChatOpenAI({
     model: settings.chatModel,

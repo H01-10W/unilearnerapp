@@ -81,6 +81,22 @@ declare global {
     owned_by?: string;
   };
 
+  type LearnerAiFetchRequest = {
+    body?: Uint8Array;
+    headers: Array<[string, string]>;
+    method: string;
+    requestId: string;
+    settings: LearnerAiSettings;
+    url: string;
+  };
+
+  type LearnerAiFetchResponse = {
+    body: ArrayBuffer;
+    headers: Array<[string, string]>;
+    status: number;
+    statusText: string;
+  };
+
   type LearnerImageGenerationRequest = {
     prompt: string;
     settings?: LearnerAiSettings;
@@ -699,6 +715,8 @@ declare global {
       searchDocuments: (query: string, limit?: number) => Promise<DocumentSearchResult[]>;
       rebuildDocumentSearchIndex: () => Promise<void>;
       configureAi: (settings?: LearnerAiSettings) => Promise<LearnerAiSettings>;
+      fetchAi: (request: LearnerAiFetchRequest) => Promise<LearnerAiFetchResponse>;
+      abortAiFetch: (requestId: string) => void;
       logAiChatEvent: (eventName: string, details?: Record<string, unknown>) => void;
       listAiModels: (settings?: LearnerAiSettings) => Promise<LearnerAiModel[]>;
       testAiEmbedding: (settings?: LearnerAiSettings) => Promise<{ dimensions: number; model: string }>;

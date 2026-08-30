@@ -121,6 +121,16 @@ function createChatModel({
 
   assertConfigured(config, "AI chat model");
 
+  try {
+    operationLog("ai.client.created", {
+      model: config.model,
+      baseUrl: config.baseUrl,
+      apiKeyPresent: Boolean(config.apiKey),
+    });
+  } catch {
+    // ignore logging errors
+  }
+
   return {
     config,
     model: new ChatOpenAI({
@@ -165,6 +175,16 @@ async function requestStructuredOutput({
     name: schemaName,
     strict,
   });
+  try {
+    operationLog("ai.request.started", {
+      model: config.model,
+      baseUrl: config.baseUrl,
+      schemaName: schemaName || null,
+    });
+  } catch {
+    // ignore logging errors
+  }
+
   const response = await runnable.invoke(normalizeMessages(messages));
   let data = response.parsed;
 
