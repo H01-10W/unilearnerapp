@@ -8,6 +8,7 @@ import { DOMSerializer, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { EditorContent, useEditor } from "@tiptap/react";
+import { TableKit } from "@tiptap/extension-table";
 import StarterKit from "@tiptap/starter-kit";
 import {
   CaretDownIcon,
@@ -878,6 +879,7 @@ function TiptapEditor({
       LearnerImage.configure({
         allowBase64: false,
       }),
+      TableKit,
       LatexDelimiters,
       Markdown.configure({
         markedOptions: {

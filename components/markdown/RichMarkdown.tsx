@@ -81,6 +81,14 @@ function MarkdownPre({ children }: { children?: ReactNode }) {
   return <pre>{children}</pre>;
 }
 
+function MarkdownTable({ children }: { children?: ReactNode }) {
+  return (
+    <div className="learner-markdown-table-wrap">
+      <table>{children}</table>
+    </div>
+  );
+}
+
 const RichMarkdown = memo(function RichMarkdown({
   children,
   className = "",
@@ -98,6 +106,7 @@ const RichMarkdown = memo(function RichMarkdown({
         components={{
           ...components,
           pre: MarkdownPre,
+          table: MarkdownTable,
         }}
         rehypePlugins={[rehypeKatex, rehypeHighlight]}
         remarkPlugins={[remarkGfm, remarkMath]}
